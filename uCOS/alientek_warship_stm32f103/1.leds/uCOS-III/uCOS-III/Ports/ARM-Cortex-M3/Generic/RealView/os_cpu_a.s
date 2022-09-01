@@ -38,19 +38,18 @@
 
 
     EXPORT  OSStartHighRdy                                      ; Functions declared in this file
-    EXPORT  OS_CPU_PendSVHandler
+    EXPORT  PendSV_Handler
 
 ;PAGE
 ;********************************************************************************************************
 ;                                               EQUATES
 ;********************************************************************************************************
 
-NVIC_INT_CTRL   EQU     0xE000ED04                              ; Interrupt control state register.
-NVIC_SYSPRI14   EQU     0xE000ED22                              ; System priority register (priority 14).
-NVIC_PENDSV_PRI EQU           0xFF                              ; PendSV priority value (lowest).
-NVIC_PENDSVSET  EQU     0x10000000                              ; Value to trigger PendSV exception.
-
-
+NVIC_INT_CTRL   EQU     0xE000ED04  ; ÖÐ¶Ï¿ØÖÆ¼Ä´æÆ÷
+NVIC_SYSPRI4    EQU     0xE000ED22  ; ÏµÍ³ÓÅÏÈ¼¶¼Ä´æÆ÷(14)
+NVIC_PENDSV_PRI EQU     	0xFFFF  ; PendSVÖÐ¶ÏºÍÏµÍ³½ÚÅÄÖÐ¶Ï                            ; PendSV priority value (lowest).
+NVIC_PENDSVSET  EQU     0x10000000  ; ´¥·¢Èí¼þÖÐ¶ÏµÄÖµ.
+	
 ;********************************************************************************************************
 ;                                     CODE GENERATION DIRECTIVES
 ;********************************************************************************************************
@@ -78,7 +77,7 @@ NVIC_PENDSVSET  EQU     0x10000000                              ; Value to trigg
 ;********************************************************************************************************
 
 OSStartHighRdy
-    LDR     R0, =NVIC_SYSPRI14                                  ; Set the PendSV exception priority
+    LDR     R0, =NVIC_SYSPRI4                                  ; Set the PendSV exception priority
     LDR     R1, =NVIC_PENDSV_PRI
     STRB    R1, [R0]
 
@@ -99,6 +98,34 @@ OSStartHang
     B       OSStartHang                                         ; Should never get here
 
 
+;********************************************************************************************************
+;                       PERFORM A CONTEXT SWITCH (From task level) - OSCtxSw()
+;
+; Note(s) : 1) OSCtxSw() is called when OS wants to perform a task context switch.  This function
+;              triggers the PendSV exception which is where the real work is done.
+;********************************************************************************************************
+
+OSCtxSw
+    LDR     R0, =NVIC_INT_CTRL                                  ; Trigger the PendSV exception (causes context switch)
+    LDR     R1, =NVIC_PENDSVSET
+    STR     R1, [R0]
+    BX      LR
+
+
+;********************************************************************************************************
+;                   PERFORM A CONTEXT SWITCH (From interrupt level) - OSIntCtxSw()
+;
+; Note(s) : 1) OSIntCtxSw() is called by OSIntExit() when it determines a context switch is needed as
+;              the result of an interrupt.  This function simply triggers a PendSV exception which will
+;              be handled when there are no more interrupts active and interrupts are enabled.
+;********************************************************************************************************
+
+OSIntCtxSw
+    LDR     R0, =NVIC_INT_CTRL                                  ; Trigger the PendSV exception (causes context switch)
+    LDR     R1, =NVIC_PENDSVSET
+    STR     R1, [R0]
+    BX      LR
+	
 ;PAGE
 ;********************************************************************************************************
 ;                                       HANDLE PendSV EXCEPTION
@@ -135,10 +162,10 @@ OSStartHang
 ;              therefore safe to assume that context being switched out was using the process stack (PSP).
 ;********************************************************************************************************
 
-OS_CPU_PendSVHandler
+PendSV_Handler
     CPSID   I                                                   ; Prevent interruption during context switch
     MRS     R0, PSP                                             ; PSP is process stack pointer
-    CBZ     R0, OS_CPU_PendSVHandler_nosave                     ; Skip register save the first time
+    CBZ     R0, PendSVHandler_nosave                     ; Skip register save the first time
 
     SUBS    R0, R0, #0x20                                       ; Save remaining regs r4-11 on process stack
     STM     R0, {R4-R11}
@@ -148,7 +175,7 @@ OS_CPU_PendSVHandler
     STR     R0, [R1]                                            ; R0 is SP of process being switched out
 
                                                                 ; At this point, entire context of process has been saved
-OS_CPU_PendSVHandler_nosave
+PendSVHandler_nosave
     PUSH    {R14}                                               ; Save LR exc_return value
     LDR     R0, =OSTaskSwHook                                   ; OSTaskSwHook();
     BLX     R0
