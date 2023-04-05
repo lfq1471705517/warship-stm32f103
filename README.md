@@ -1,5 +1,5 @@
-# rtos_bsp
-​		ported rtos source codes
+# warship-stm32f103
+​		Alientek warship stm32f103zet6 rtos source codes
 
 
 
